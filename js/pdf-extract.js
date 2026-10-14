@@ -1,6 +1,29 @@
 // Lecture d'un PDF dans le navigateur avec pdf.js (copie locale dans lib/pdfjs).
 // Le fichier ne quitte jamais l'appareil : tout se passe ici, en mémoire.
 
+// Safari (iPhone) ne sait pas parcourir un flux de données avec « for await »,
+// alors que pdf.js s'en sert. On ajoute cette fonction si elle manque.
+function patchReadableStream() {
+  if (typeof ReadableStream === 'undefined' || ReadableStream.prototype[Symbol.asyncIterator]) return;
+  const iterate = async function* () {
+    const reader = this.getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) return;
+        yield value;
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  };
+  Object.defineProperty(ReadableStream.prototype, Symbol.asyncIterator, { value: iterate, configurable: true, writable: true });
+  if (!ReadableStream.prototype.values) {
+    Object.defineProperty(ReadableStream.prototype, 'values', { value: iterate, configurable: true, writable: true });
+  }
+}
+patchReadableStream();
+
 let pdfjsPromise = null;
 
 async function loadPdfjs() {
@@ -11,6 +34,18 @@ async function loadPdfjs() {
     });
   }
   return pdfjsPromise;
+}
+
+/** Lit le texte d'une page sans « for await » (compatible avec tous les navigateurs) */
+async function pageTextItems(page) {
+  const reader = page.streamTextContent().getReader();
+  const items = [];
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value && value.items) items.push(...value.items);
+  }
+  return items;
 }
 
 /**
@@ -24,9 +59,9 @@ export async function extractPages(arrayBuffer, pdfjsLib) {
   const pages = [];
   for (let p = 1; p <= doc.numPages; p++) {
     const page = await doc.getPage(p);
-    const content = await page.getTextContent();
+    const items = await pageTextItems(page);
     pages.push({
-      items: content.items
+      items: items
         .filter(i => typeof i.str === 'string' && i.str.trim() !== '')
         .map(i => ({ str: i.str, x: i.transform[4], y: i.transform[5], w: i.width })),
     });

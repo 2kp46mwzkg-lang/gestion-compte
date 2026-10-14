@@ -1,0 +1,15 @@
+# Ne JAMAIS publier de données bancaires sur GitHub
+*.pdf
+*.PDF
+*.csv
+*.ofx
+*.qif
+*.xls
+*.xlsx
+mon-budget-sauvegarde*.json
+sauvegarde*.json
+releves/
+
+# Fichiers système
+.DS_Store
+Thumbs.db
